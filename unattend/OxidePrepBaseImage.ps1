@@ -119,28 +119,44 @@ if (-not $connected) {
 #region Enable SSH
 Write-Host "Enabling SSH"
 
-# The easiest way to install OpenSSH is to install the relevant Windows
-# capability, but this only exists in-box on Windows Server 2019 and later.
-# Server 2016 recognizes the capability name, but enabling it doesn't actually
-# install the sshd service. Try to detect both of these cases.
-Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 -ErrorAction SilentlyContinue
-if ($?) {
-    $sshCap = Get-Service -Name sshd -ErrorAction SilentlyContinue
-}
+# Windows Server 2025 ships with OpenSSH pre-installed (both client and
+# server) but the sshd service is disabled. Earlier versions require
+# installation. Check for the service first to avoid double-installing.
+$sshdService = Get-Service -Name sshd -ErrorAction SilentlyContinue
+if (-not $sshdService) {
+    # The easiest way to install OpenSSH is to install the relevant Windows
+    # capability, but this only exists in-box on Windows Server 2019 and later.
+    # Server 2016 recognizes the capability name, but enabling it doesn't
+    # actually install the sshd service. Try to detect both of these cases.
+    Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 -ErrorAction SilentlyContinue
+    if ($?) {
+        $sshCap = Get-Service -Name sshd -ErrorAction SilentlyContinue
+    }
 
-# If either of the last two commands produced an error, fall back to trying to
-# pull the latest release down from GitHub and trying to install it manually.
-if ($?) {
-    Write-Host "SSH service installed via Add-WindowsCapability"
+    # If either of the last two commands produced an error, fall back to trying
+    # to pull the latest release down from GitHub and install it manually.
+    if ($?) {
+        Write-Host "SSH service installed via Add-WindowsCapability"
+    } else {
+        Write-Host "SSH capability not present in image, will download from GitHub"
+        $sshPath = "C:\Windows\Temp\OpenSSH-Win64.zip"
+        RetryWithBackoff -ScriptBlock { DownloadLatestSshArchive -ArchivePath $sshPath }
+        InstallSshFromArchive -ArchivePath $sshPath
+    }
 } else {
-    Write-Host "SSH capability not present in image, will download from GitHub"
-    $sshPath = "C:\Windows\Temp\OpenSSH-Win64.zip"
-    RetryWithBackoff -ScriptBlock { DownloadLatestSshArchive -ArchivePath $sshPath }
-    InstallSshFromArchive -ArchivePath $sshPath
+    Write-Host "SSH service already installed (Windows Server 2025+)"
 }
 
+# Configure and enable sshd (works on all versions).
 Set-Service -Name sshd -StartupType Automatic
 Start-Service sshd
+
+# Ensure the firewall rule exists (InstallSshFromArchive creates it for the
+# GitHub-download path, but not for the capability or pre-installed paths).
+if (-not (Get-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -DisplayName "OpenSSH Server (sshd)" `
+        -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow
+}
 
 $content = [System.IO.File]::ReadAllText("C:\ProgramData\ssh\sshd_config").Replace("Match Group administrators", "#Match Group administrators").Replace("AuthorizedKeysFile __PROGRAMDATA__", "#AuthorizedKeysFile __PROGRAMDATA__")
 [System.IO.File]::WriteAllText("C:\ProgramData\ssh\sshd_config", $content)
