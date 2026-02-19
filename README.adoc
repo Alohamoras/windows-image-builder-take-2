@@ -63,7 +63,7 @@ cp imgbuild.env.sample imgbuild.env
 | Full path to the resulting raw disk image (`.img` or `.raw`) that will be produced by the build.
 
 | `WINDOWS_ISO`
-| Path to the Windows Server installation ISO (2019 or 2022 recommended).
+| Path to the Windows Server installation ISO (2019, 2022, or 2025 recommended).
 
 | `VIRTIO_ISO`
 | Path to the VirtIO driver ISO, used to inject storage and network drivers during Windows setup.
@@ -140,6 +140,7 @@ IMPORTANT: This image will be fairly large, roughly 13-15GB for most basic insta
 
 === Official Windows ISOs
 
+- https://www.microsoft.com/en-us/evalcenter/evaluate-windows-server-2025
 - https://www.microsoft.com/en-us/evalcenter/evaluate-windows-server-2022
 - https://www.microsoft.com/en-us/evalcenter/evaluate-windows-server-2019
 
