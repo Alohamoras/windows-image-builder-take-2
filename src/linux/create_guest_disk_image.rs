@@ -9,6 +9,7 @@ use std::{collections::HashMap, io::Write, process::Command, str::FromStr};
 
 use crate::{
     app::ImageSources,
+    autounattend::WindowsVersion,
     runner::{Context, MissingPrerequisites, Script, ScriptStep},
     ui::Ui,
     util::{
@@ -152,6 +153,10 @@ impl Script for CreateGuestDiskImageScript {
             ctx.insert("vga_console".to_string(), String::new());
         }
 
+        if let Some(version) = &args.sources.windows_version {
+            ctx.insert("windows_version".to_string(), format!("{:?}", version));
+        }
+
         ctx
     }
 }
@@ -215,10 +220,20 @@ fn copy_unattend_files_to_work_dir(
 }
 
 fn customize_autounattend_xml(ctx: &mut Context, _ui: &dyn Ui) -> Result<()> {
+    let windows_version = ctx.get_var("windows_version").and_then(|s| {
+        match s.as_ref() {
+            "Server2016" => Some(WindowsVersion::Server2016),
+            "Server2019" => Some(WindowsVersion::Server2019),
+            "Server2022" => Some(WindowsVersion::Server2022),
+            "Server2025" => Some(WindowsVersion::Server2025),
+            _ => None,
+        }
+    });
+
     let customizer = crate::autounattend::AutounattendUpdater::new(
         ctx.get_var("unattend_image_index")
             .map(|val| val.parse::<u32>().unwrap()),
-        None,
+        windows_version,
     );
 
     let unattend_dir =
