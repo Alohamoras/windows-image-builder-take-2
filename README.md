@@ -9,11 +9,11 @@ complete. You can then upload the installation disk to an Oxide rack and attach
 it to a VM or use it as the source disk for a new disk image.
 
 `wimsy` runs on Linux (tested on Ubuntu 20.04) and illumos systems and supports
-creating Windows Server 2019 and Windows Server 2022 images. Windows Server
-2016 is not yet fully supported (but it's on the roadmap). Earlier versions of
-Windows Server and client editions of Windows are not supported. It may be
-possible to use `wimsy` to generate images for these versions, but Oxide has
-not tested them, so your mileage may vary.
+creating Windows Server 2019, Windows Server 2022, and Windows Server 2025
+images. Windows Server 2016 is not yet fully supported (but it's on the
+roadmap). Earlier versions of Windows Server and client editions of Windows are
+not supported. It may be possible to use `wimsy` to generate images for these
+versions, but Oxide has not tested them, so your mileage may vary.
 
 # Usage
 

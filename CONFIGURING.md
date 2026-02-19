@@ -44,7 +44,7 @@ you can use the `--windows-version` switch to specify your target Windows
 version:
 
 ```sh
-./wimsy <ARGS> create-guest-disk-image --windows-version [2k16|2k19|2k22]
+./wimsy <ARGS> create-guest-disk-image --windows-version [2k16|2k19|2k22|2k25]
 ```
 
 This option will make `wimsy` patch the installation's `Autounattend.xml` to

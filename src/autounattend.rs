@@ -18,6 +18,7 @@ pub enum WindowsVersion {
     Server2016,
     Server2019,
     Server2022,
+    Server2025,
 }
 
 impl std::fmt::Display for WindowsVersion {
@@ -26,6 +27,7 @@ impl std::fmt::Display for WindowsVersion {
             WindowsVersion::Server2016 => write!(f, "Windows Server 2016"),
             WindowsVersion::Server2019 => write!(f, "Windows Server 2019"),
             WindowsVersion::Server2022 => write!(f, "Windows Server 2022"),
+            WindowsVersion::Server2025 => write!(f, "Windows Server 2025"),
         }
     }
 }
@@ -36,6 +38,7 @@ impl WindowsVersion {
             WindowsVersion::Server2016 => "2k16",
             WindowsVersion::Server2019 => "2k19",
             WindowsVersion::Server2022 => "2k22",
+            WindowsVersion::Server2025 => "2k25",
         }
     }
 }
@@ -341,6 +344,22 @@ mod test {
         let as_str = std::str::from_utf8(&new).unwrap();
         assert!(LINUX_UNATTEND.contains("D:\\NetKVM\\2k22\\amd64"));
         assert!(as_str.contains("D:\\NetKVM\\2k16\\amd64"));
+    }
+
+    #[test]
+    fn replace_linux_unattend_2025() {
+        let updater =
+            AutounattendUpdater::new(Some(2), Some(WindowsVersion::Server2025));
+
+        let reader = xml::EventReader::new(LINUX_UNATTEND.as_bytes());
+        let mut new: Vec<u8> = Vec::new();
+        let writer = xml::EventWriter::new(&mut new);
+
+        assert_eq!(updater.run_internal(reader, writer).unwrap(), 7);
+
+        let as_str = std::str::from_utf8(&new).unwrap();
+        assert!(LINUX_UNATTEND.contains("D:\\NetKVM\\2k22\\amd64"));
+        assert!(as_str.contains("D:\\NetKVM\\2k25\\amd64"));
     }
 
     #[test]

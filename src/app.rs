@@ -89,7 +89,7 @@ pub struct ImageSources {
     /// - Top-level directories named `viostor` and `NetKVM`
     ///
     /// - Within each of these directories, subdirectories named `2k16`, `2k19`,
-    ///   and `2k22`
+    ///   `2k22`, and `2k25`
     ///
     /// - Within each of these directories, an `amd64` subdirectory, which
     ///   contains `.cat`, `.inf`, and `.sys` files (i.e. the driver collateral
@@ -114,8 +114,9 @@ pub struct ImageSources {
 
     /// An optional Windows Server version that specifies the driver
     /// installation paths to specify in Autounattend.xml. If set, this
-    /// substitutes the appropriate versioned directory name ("2k16", "2k19", or
-    /// "2k22") into the DriverPaths specified in the template Autounattend.xml
+    /// substitutes the appropriate versioned directory name ("2k16", "2k19",
+    /// "2k22", or "2k25") into the DriverPaths specified in the template
+    /// Autounattend.xml
     /// specified by --unattend-dir. If not specified, the existing driver paths
     /// in that Autounattend.xml are used.
     #[arg(long, value_enum)]
