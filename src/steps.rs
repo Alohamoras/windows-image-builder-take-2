@@ -83,26 +83,76 @@ pub fn get_gpt_partition_information(
 /// Uses `sgdisk` to get the sector size and the offset of the last sector in an
 /// output image.
 ///
+/// This function dynamically finds the last partition rather than assuming a
+/// fixed partition number. Windows Server 2016/2019/2022 create 4 partitions,
+/// while Windows Server 2025 creates 5 (it adds a second recovery partition
+/// after the OS partition). Hardcoding partition 4 would truncate partition 5
+/// on WS2025, corrupting the GPT.
+///
 /// # Arguments
 ///
 /// - image_path: The path to a Windows image that was produced by running the
-///   Windows installer and attendant unattend scripts. The image is presumed to
-///   have 4 partitions, the last of which is the main Windows OS partition;
-///   running Windows setup with the unattend scripts in this repository will
-///   produce an appropriately-partitioned disk.
+///   Windows installer and attendant unattend scripts.
 ///
 /// # Return value
 ///
-/// - `Ok(sector size, last sector)` if the relevant `sgdisk` commands
-///   succeeded.
-/// - `Err` if an `sgdisk` command failed or did not produce the expected
-///   output.
+/// - `Ok(sector size, last sector)` where last sector is the highest end sector
+///   across all partitions.
+/// - `Err` if an `sgdisk` command failed, produced unexpected output, or
+///   contained no partition entries.
 pub fn get_output_image_partition_size(
     image_path: &str,
     ui: &dyn Ui,
 ) -> Result<(String, String)> {
-    get_gpt_partition_information(image_path, 4, ui)
-        .map(|info| (info.sector_size, info.last_sector))
+    let sector_size = grep_command_for_row_and_column(
+        Command::new("sgdisk").args(["-p", image_path]),
+        "Sector size",
+        3,
+        ui,
+    )
+    .context("running 'sgdisk -p' to get sector size")?;
+
+    let output = run_command_check_status(
+        Command::new("sgdisk").args(["-p", image_path]),
+        ui,
+    )
+    .context("running 'sgdisk -p' to list partitions")?;
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    let mut max_end_sector: Option<u64> = None;
+    for line in output_str.lines() {
+        let trimmed = line.trim_start();
+        if !trimmed.starts_with(|c: char| c.is_ascii_digit()) {
+            continue;
+        }
+        let mut cols = trimmed.split_whitespace();
+        // column 0: partition number, column 1: start sector, column 2: end sector
+        let end_sector = cols
+            .nth(2)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "partition line '{line}' does not have an end sector column"
+                )
+            })?
+            .parse::<u64>()
+            .with_context(|| {
+                format!(
+                    "parsing end sector from partition line '{line}'"
+                )
+            })?;
+        max_end_sector = Some(match max_end_sector {
+            Some(prev) => prev.max(end_sector),
+            None => end_sector,
+        });
+    }
+
+    let max_end_sector = max_end_sector.ok_or_else(|| {
+        anyhow::anyhow!(
+            "no partition entries found in 'sgdisk -p' output for '{image_path}'"
+        )
+    })?;
+
+    Ok((sector_size, max_end_sector.to_string()))
 }
 
 /// Given an installed Windows image at `image_path` whose sector size is
