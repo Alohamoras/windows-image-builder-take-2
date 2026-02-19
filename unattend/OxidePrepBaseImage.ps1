@@ -181,6 +181,18 @@ $diff = $curSz - $newSz
 if ($newSz -lt $maxSz) { Resize-Partition -DriveLetter C -Size $newSz; Write-Host "New Partition Size: $newSz"; Write-Host "Free'd $diff" }
 #endregion
 
+#region Clean up AppX packages that block sysprep on WS2025
+# Microsoft Edge and WinGet are provisioned AppX packages on WS2025. If Edge
+# has been launched by any user during setup, the per-user Edge package blocks
+# sysprep with error 0x80073cf2. Safe to run on all versions; silently succeeds
+# if packages are not present.
+Write-Host "Cleaning up AppX packages that may block sysprep"
+Get-AppxPackage -AllUsers "Microsoft.Edge.*" -ErrorAction SilentlyContinue |
+    Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+Get-AppxPackage -AllUsers "Microsoft.Winget.Source" -ErrorAction SilentlyContinue |
+    Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+#endregion
+
 #region Generalize image
 Write-Host "Generalizing image"
 C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown /unattend:"$ConfigDir\specialize-unattend.xml"
