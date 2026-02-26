@@ -6,7 +6,6 @@ install_linux_prerequisites() {
     local packages=(
     'gdisk'
     'genisoimage'
-    'libguestfs-tools'
     'ovmf'
     'qemu-system-x86'
     'qemu-system-gui'

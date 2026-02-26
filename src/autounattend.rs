@@ -168,7 +168,9 @@ impl AutounattendUpdater {
         }
 
         if let Some(version) = virtio_driver_version {
-            let elements = vec![
+            // Rule for the offlineServicing pass: injects versioned drivers
+            // into the offline Windows image after installation.
+            let offline_elements = vec![
                 MatchElement { name: "unattend", attributes: vec![] },
                 MatchElement {
                     name: "settings",
@@ -195,7 +197,7 @@ impl AutounattendUpdater {
             ];
 
             rules.push(ReplacementRule {
-                elements,
+                elements: offline_elements,
                 replace_fn: Box::new(move |path| {
                     replace_version_in_driver_path(path, version)
                 }),
@@ -339,11 +341,14 @@ mod test {
         let mut new: Vec<u8> = Vec::new();
         let writer = xml::EventWriter::new(&mut new);
 
+        // 1 image index + 6 offlineServicing paths
         assert_eq!(updater.run_internal(reader, writer).unwrap(), 7);
 
         let as_str = std::str::from_utf8(&new).unwrap();
         assert!(LINUX_UNATTEND.contains("D:\\NetKVM\\2k22\\amd64"));
         assert!(as_str.contains("D:\\NetKVM\\2k16\\amd64"));
+        assert!(LINUX_UNATTEND.contains("D:\\viostor\\2k22\\amd64"));
+        assert!(as_str.contains("D:\\viostor\\2k16\\amd64"));
     }
 
     #[test]
@@ -355,11 +360,14 @@ mod test {
         let mut new: Vec<u8> = Vec::new();
         let writer = xml::EventWriter::new(&mut new);
 
+        // 1 image index + 6 offlineServicing paths
         assert_eq!(updater.run_internal(reader, writer).unwrap(), 7);
 
         let as_str = std::str::from_utf8(&new).unwrap();
         assert!(LINUX_UNATTEND.contains("D:\\NetKVM\\2k22\\amd64"));
         assert!(as_str.contains("D:\\NetKVM\\2k25\\amd64"));
+        assert!(LINUX_UNATTEND.contains("D:\\viostor\\2k22\\amd64"));
+        assert!(as_str.contains("D:\\viostor\\2k25\\amd64"));
     }
 
     #[test]

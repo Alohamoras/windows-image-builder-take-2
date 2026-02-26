@@ -5,7 +5,12 @@
 //! Defines a script for building a Windows guest image on a Linux system using
 //! QEMU.
 
-use std::{collections::HashMap, io::Write, process::Command, str::FromStr};
+use std::{
+    collections::HashMap,
+    io::Write,
+    process::Command,
+    str::FromStr,
+};
 
 use crate::{
     app::ImageSources,
@@ -256,11 +261,18 @@ fn customize_autounattend_xml(ctx: &mut Context, _ui: &dyn Ui) -> Result<()> {
 }
 
 fn install_via_qemu(ctx: &mut Context, ui: &dyn Ui) -> Result<()> {
-    // Launch a VM in QEMU with the installation target disk attached as an NVMe
-    // drive and CD-ROM drives containing the Windows installation media, the
-    // virtio driver disk, and the answer file ISO created previously. Windows
-    // setup will detect the presence of the answer file ISO and use the
-    // Autounattend.xml located there to drive installation.
+    // Launch a VM in QEMU with the installation target disk attached as an
+    // NVMe drive and CD-ROM drives containing the Windows installation media,
+    // the virtio driver disk, and the answer file ISO created previously.
+    // Windows setup will detect the presence of the answer file ISO and use
+    // the Autounattend.xml located there to drive installation.
+    //
+    // Using NVMe for the installation target disk matches how Oxide presents
+    // its boot disk. viostor (the VirtIO block driver) is still injected via
+    // the offlineServicing pass in Autounattend.xml to handle the cloud-init
+    // metadata drive, which Oxide presents as a VirtIO block device (DEV_1042).
+    // viostor does not need to be boot-critical because Oxide boots via NVMe
+    // using the inbox stornvme.sys driver.
     let pflash_arg = format!(
         "if=pflash,format=raw,readonly=on,file={}",
         ctx.get_var("ovmf_path").unwrap()
@@ -306,8 +318,7 @@ fn install_via_qemu(ctx: &mut Context, ui: &dyn Ui) -> Result<()> {
         "-device",
         "virtio-net-pci,netdev=net0",
         "-device",
-        "nvme,drive=drivec,serial=01de01de,physical_block_size=512,\
-                logical_block_size=512,discard_granularity=512,bootindex=1",
+        "nvme,drive=drivec,serial=01de01de,physical_block_size=512,logical_block_size=512,discard_granularity=512,bootindex=1",
         "-drive",
         &install_disk_arg,
         "-device",
@@ -395,6 +406,107 @@ fn get_partition_size(ctx: &mut Context, ui: &dyn Ui) -> Result<()> {
     Ok(())
 }
 
+/// Removes any partitions that trail the OS (Basic data, type 0700) partition.
+///
+/// Windows Server 2025 creates a second Recovery partition (type 2700) after
+/// the OS partition. Oxide requires the OS partition to be the last partition
+/// on the disk so that it can be grown to fill the disk on import. This step
+/// deletes any partitions whose end sector is greater than that of the largest
+/// Basic data partition.
+fn delete_trailing_recovery_partition(
+    ctx: &mut Context,
+    ui: &dyn Ui,
+) -> Result<()> {
+    let output_image = ctx.get_var("output_image").unwrap().to_string();
+    ui.set_substep("scanning partition table for trailing recovery partitions");
+
+    let output = run_command_check_status(
+        Command::new("sgdisk").args(["-p", &output_image]),
+        ui,
+    )
+    .context("running 'sgdisk -p' to list partitions")?;
+
+    struct PartEntry {
+        number: u32,
+        end_sector: u64,
+        type_code: String,
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    let mut partitions: Vec<PartEntry> = Vec::new();
+    for line in output_str.lines() {
+        let trimmed = line.trim_start();
+        if !trimmed.starts_with(|c: char| c.is_ascii_digit()) {
+            continue;
+        }
+        let mut cols = trimmed.split_whitespace();
+        let number: u32 = cols
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("missing partition number in line '{line}'"))?
+            .parse()
+            .with_context(|| format!("parsing partition number from '{line}'"))?;
+        let _start: u64 = cols
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("missing start sector in line '{line}'"))?
+            .parse()
+            .with_context(|| format!("parsing start sector from '{line}'"))?;
+        let end_sector: u64 = cols
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("missing end sector in line '{line}'"))?
+            .parse()
+            .with_context(|| format!("parsing end sector from '{line}'"))?;
+        // Skip the size value and unit columns (e.g. "16.4" "GiB").
+        let _size_val = cols.next();
+        let _size_unit = cols.next();
+        let type_code = cols
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("missing type code in line '{line}'"))?
+            .to_string();
+
+        partitions.push(PartEntry { number, end_sector, type_code });
+    }
+
+    // Find the end sector of the largest Basic data (0700) partition — the OS.
+    let os_end = partitions
+        .iter()
+        .filter(|p| p.type_code == "0700")
+        .map(|p| p.end_sector)
+        .max()
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "no Basic data (0700) partition found in '{output_image}'"
+            )
+        })?;
+
+    // Collect partitions that lie entirely after the OS partition.
+    let trailing: Vec<u32> = partitions
+        .iter()
+        .filter(|p| p.end_sector > os_end)
+        .map(|p| p.number)
+        .collect();
+
+    if trailing.is_empty() {
+        ui.set_substep("no trailing partitions found; nothing to delete");
+        return Ok(());
+    }
+
+    for part_num in &trailing {
+        ui.set_substep(&format!(
+            "deleting trailing partition {part_num} from '{output_image}'"
+        ));
+        run_command_check_status(
+            Command::new("sgdisk")
+                .args(["-d", &part_num.to_string(), &output_image]),
+            ui,
+        )
+        .with_context(|| {
+            format!("deleting partition {part_num} from '{output_image}'")
+        })?;
+    }
+
+    Ok(())
+}
+
 fn shrink_output_image(ctx: &mut Context, ui: &dyn Ui) -> Result<()> {
     crate::steps::shrink_output_image(
         ctx.get_var("output_image").unwrap(),
@@ -432,6 +544,11 @@ fn get_script() -> Vec<ScriptStep> {
             "install Windows to output image using QEMU",
             install_via_qemu,
             &["qemu-system-x86_64"],
+        ),
+        ScriptStep::with_prereqs(
+            "delete trailing recovery partition",
+            delete_trailing_recovery_partition,
+            &["sgdisk"],
         ),
         ScriptStep::with_prereqs(
             "get size of primary installation partition",

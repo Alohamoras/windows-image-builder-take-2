@@ -128,7 +128,7 @@ tools_ok=true
 
 # Build list of missing tools (excluding KVM device and group)
 missing_tools=()
-for tool in qemu-system-x86_64 qemu-img genisoimage sgdisk curl cargo rustc guestfish hivexregedit; do
+for tool in qemu-system-x86_64 qemu-img genisoimage sgdisk curl cargo rustc; do
     if ! check_tool "$tool"; then
         missing_tools+=("$tool")
     fi
@@ -155,7 +155,7 @@ if (( ${#missing_tools[@]} > 0 )); then
 fi
 
 # Final per-tool verdict (after possible install)
-for tool in qemu-system-x86_64 qemu-img genisoimage sgdisk curl cargo rustc guestfish hivexregedit; do
+for tool in qemu-system-x86_64 qemu-img genisoimage sgdisk curl cargo rustc; do
     if check_tool "$tool"; then
         pass "$tool is available"
     else
