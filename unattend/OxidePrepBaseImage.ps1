@@ -93,26 +93,9 @@ Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 #endregion
 
 #region Wait for internet access
-$timeout = New-TimeSpan -Seconds 30
-$stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-$connected = $false
-
-do {
-    $ping = Test-NetConnection -ComputerName "www.oxide.computer" -Port 443
-    if ($ping.TcpTestSucceeded) {
-        $connected = $true
-        break
-    }
-
-    Start-Sleep -Seconds 1
-} while ($stopwatch.Elapsed -lt $timeout)
-
-if (-not $connected) {
-    Write-Host "No internet connectivity"
-    exit 1
-} else {
-    Write-Host "Internet connection established"
-}
+# Skip polling oxide.computer — QEMU user-mode networking provides NAT access
+# and cloudbase-init's RetryWithBackoff handles transient failures.
+Write-Host "Skipping internet connectivity poll"
 #endregion
 
 
@@ -180,9 +163,9 @@ Set-Service -Name cloudbase-init -StartupType Disabled
 #endregion
 
 #region Cleanup and defrag/TRIM disk
-Write-Host "Cleaning up disk"
-Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase
-Optimize-Volume -DriveLetter C
+# Skip DISM /ResetBase (~2 min) and Optimize-Volume (~30-60s) — the offline
+# shrink step reclaims zeroed space either way, so final .raw size is similar.
+Write-Host "Skipping DISM ResetBase and Optimize-Volume (handled by offline shrink)"
 #endregion
 
 #region Shrink OS partition

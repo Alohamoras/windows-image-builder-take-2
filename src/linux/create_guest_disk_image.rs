@@ -279,7 +279,7 @@ fn install_via_qemu(ctx: &mut Context, ui: &dyn Ui) -> Result<()> {
     );
 
     let install_disk_arg = format!(
-        "if=none,id=drivec,file={},format=raw",
+        "if=none,id=drivec,file={},format=raw,cache=writeback",
         ctx.get_var("output_image").unwrap()
     );
 
@@ -304,11 +304,15 @@ fn install_via_qemu(ctx: &mut Context, ui: &dyn Ui) -> Result<()> {
         "-M",
         "pc",
         "-m",
-        "2048",
+        "8192",
+        // Use the host CPU model so that Windows installs with a CPU
+        // configuration compatible with both the build host and Oxide hardware.
+        // kvm=off hides the KVM CPUID leaf so the guest uses Hyper-V
+        // enlightenments via the hv_* flags below.
         "-cpu",
         "host,kvm=off,hv_relaxed,hv_spinlocks=0x1fff,hv_vapic,hv_time",
         "-smp",
-        "2,sockets=1,cores=2",
+        "4,sockets=1,cores=4",
         "-rtc",
         "base=localtime",
         "-drive",
