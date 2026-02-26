@@ -260,7 +260,59 @@ fn customize_autounattend_xml(ctx: &mut Context, _ui: &dyn Ui) -> Result<()> {
     Ok(())
 }
 
+/// Returns the number of physical CPU cores to allocate to the QEMU build VM:
+/// total physical cores on the host minus one, with a minimum of one.
+fn detect_physical_cores() -> u32 {
+    let output = std::process::Command::new("lscpu").output().ok();
+    if let Some(output) = output {
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut cores_per_socket: u32 = 1;
+        let mut sockets: u32 = 1;
+        for line in text.lines() {
+            if let Some(rest) = line.strip_prefix("Core(s) per socket:") {
+                if let Ok(n) = rest.trim().parse() {
+                    cores_per_socket = n;
+                }
+            } else if let Some(rest) = line.strip_prefix("Socket(s):") {
+                if let Ok(n) = rest.trim().parse() {
+                    sockets = n;
+                }
+            }
+        }
+        let physical = cores_per_socket * sockets;
+        return physical.saturating_sub(1).max(1);
+    }
+    2
+}
+
+/// Returns the amount of RAM in MB to allocate to the QEMU build VM.
+///
+/// Formula: `min(16 GB, max(4 GB, total_ram - 4 GB))`. Leaves at least 4 GB
+/// for the host OS, caps at 16 GB to avoid monopolising systems with large RAM.
+fn detect_qemu_ram_mb() -> u64 {
+    if let Ok(contents) = std::fs::read_to_string("/proc/meminfo") {
+        for line in contents.lines() {
+            if let Some(rest) = line.strip_prefix("MemTotal:") {
+                // Format: "MemTotal:       32907264 kB"
+                if let Ok(kb) = rest.split_whitespace().next().unwrap_or("").parse::<u64>() {
+                    let total_mb = kb / 1024;
+                    let host_reserve_mb = 4096;
+                    let computed = total_mb.saturating_sub(host_reserve_mb);
+                    return computed.max(4096).min(16384);
+                }
+            }
+        }
+    }
+    8192
+}
+
 fn install_via_qemu(ctx: &mut Context, ui: &dyn Ui) -> Result<()> {
+    let qemu_cpus = detect_physical_cores();
+    let qemu_ram_mb = detect_qemu_ram_mb();
+    ui.set_substep(&format!(
+        "allocating {qemu_cpus} vCPUs and {qemu_ram_mb} MB RAM to build VM"
+    ));
+
     // Launch a VM in QEMU with the installation target disk attached as an
     // NVMe drive and CD-ROM drives containing the Windows installation media,
     // the virtio driver disk, and the answer file ISO created previously.
@@ -298,13 +350,16 @@ fn install_via_qemu(ctx: &mut Context, ui: &dyn Ui) -> Result<()> {
         ctx.get_var("unattend_iso").unwrap()
     );
 
+    let ram_str = qemu_ram_mb.to_string();
+    let smp_str = format!("{qemu_cpus},sockets=1,cores={qemu_cpus}");
+
     let mut args = vec![
         "-nodefaults",
         "-enable-kvm",
         "-M",
         "pc",
         "-m",
-        "8192",
+        &ram_str,
         // Use the host CPU model so that Windows installs with a CPU
         // configuration compatible with both the build host and Oxide hardware.
         // kvm=off hides the KVM CPUID leaf so the guest uses Hyper-V
@@ -312,7 +367,7 @@ fn install_via_qemu(ctx: &mut Context, ui: &dyn Ui) -> Result<()> {
         "-cpu",
         "host,kvm=off,hv_relaxed,hv_spinlocks=0x1fff,hv_vapic,hv_time",
         "-smp",
-        "4,sockets=1,cores=4",
+        &smp_str,
         "-rtc",
         "base=localtime",
         "-drive",

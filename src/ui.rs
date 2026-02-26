@@ -129,12 +129,28 @@ impl PerStepUi<'_> {
     }
 }
 
+fn format_elapsed(elapsed: std::time::Duration) -> String {
+    let total_secs = elapsed.as_secs();
+    let hours = total_secs / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    let seconds = total_secs % 60;
+    if hours > 0 {
+        format!("{hours}h {minutes}m {seconds}s")
+    } else if minutes > 0 {
+        format!("{minutes}m {seconds}s")
+    } else {
+        format!("{seconds}s")
+    }
+}
+
 pub fn run_script(
     script: Box<dyn Script>,
     mut ctx: Context,
     log_dir: &Utf8Path,
     mode: Mode,
 ) -> anyhow::Result<()> {
+    let start = std::time::Instant::now();
+
     let (_multi, bars) = match mode {
         Mode::Interactive => {
             let multi = MultiProgress::new();
@@ -182,6 +198,7 @@ pub fn run_script(
         result?;
     }
 
+    println!("\nTotal build time: {}.", format_elapsed(start.elapsed()));
     Ok(())
 }
 
