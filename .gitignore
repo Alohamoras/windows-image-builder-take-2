@@ -1,1 +1,4 @@
 /target
+imgbuild.env
+oxide.env
+regression/regression.conf

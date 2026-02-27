@@ -3,12 +3,26 @@
 #                  Oxide project configured in oxide.env.
 #
 # Usage:
-#   ./cleanup-run.sh [PROJECT]
+#   ./cleanup-run.sh [--yes|-y] [PROJECT]
 #       If PROJECT is omitted, uses OXIDE_PROJECT from oxide.env.
+#       --yes / -y  skip interactive confirmation (for unattended use)
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+YES=false
+_ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --yes|-y) YES=true ;;
+        *) _ARGS+=("$arg") ;;
+    esac
+done
+set -- "${_ARGS[@]+"${_ARGS[@]}"}"
 
 # ---------------------------------------------------------------------------
 # Source oxide.env
@@ -98,10 +112,12 @@ echo "=================================================="
 echo "This will delete ALL instances, disks, snapshots,"
 echo "and images in the project above."
 echo ""
-read -rp "Continue? [y/N] " _CONFIRM
-if [[ "$_CONFIRM" != "y" && "$_CONFIRM" != "Y" ]]; then
-    echo "Aborted."
-    exit 0
+if ! $YES; then
+    read -rp "Continue? [y/N] " _CONFIRM
+    if [[ "$_CONFIRM" != "y" && "$_CONFIRM" != "Y" ]]; then
+        echo "Aborted."
+        exit 0
+    fi
 fi
 echo ""
 
