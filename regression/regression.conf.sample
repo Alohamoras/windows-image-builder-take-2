@@ -7,24 +7,23 @@
 # Paths
 # ---------------------------------------------------------------------------
 
-# Directory where ISOs are stored / downloaded to
-ISO_DIR=/path/to/iso-downloads
+# Directory where ISOs are stored / downloaded to.
+# Files must be named: windows-server-{2016,2019,2022,2025}-eval.iso
+# and virtio-win.iso (for VIRTIO_ISO).
+ISO_DIR=./downloads
 
 # Directory where built .raw images land
-OUTPUT_DIR=/path/to/build-output
+OUTPUT_DIR=./output
 
 # ---------------------------------------------------------------------------
-# Shared build inputs (same as imgbuild.env)
+# Shared build inputs — inherited from imgbuild.env if that file exists.
+# Set here only if you need to override imgbuild.env or run regression
+# without a separate imgbuild.env.
 # ---------------------------------------------------------------------------
-
-VIRTIO_ISO=/path/to/iso-downloads/virtio-win.iso
-
-# Default unattend directory; may be overridden per-version below
-UNATTEND_DIR=./unattend
-
-OVMF_PATH=/usr/share/OVMF/OVMF_CODE_4M.fd
-
-WORK_DIR=/tmp
+# VIRTIO_ISO=./downloads/virtio-win.iso
+# UNATTEND_DIR=./unattend
+# OVMF_PATH=/usr/share/OVMF/OVMF_CODE_4M.fd
+# WORK_DIR=/tmp
 
 # ---------------------------------------------------------------------------
 # Versions to test (space-separated; subset allowed)
@@ -38,6 +37,16 @@ UNATTEND_DIR_2016=
 UNATTEND_DIR_2019=
 UNATTEND_DIR_2022=
 UNATTEND_DIR_2025=
+
+# ---------------------------------------------------------------------------
+# Per-version wimsy --windows-version values (selects correct VirtIO driver
+# paths in Autounattend.xml).  Defaults: server<VER> (e.g. server2019).
+# Only change these if you need to override the default mapping.
+# ---------------------------------------------------------------------------
+WINDOWS_VERSION_2016=server2016
+WINDOWS_VERSION_2019=server2019
+WINDOWS_VERSION_2022=server2022
+WINDOWS_VERSION_2025=server2025
 
 # ---------------------------------------------------------------------------
 # ISO download URLs
