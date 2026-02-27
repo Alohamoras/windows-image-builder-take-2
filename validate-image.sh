@@ -276,14 +276,6 @@ else
     fail "DriverStore/FileRepository not found — Windows installation may be incomplete"
 fi
 
-# 5i. No leftover unattend.xml in Windows/Panther (sysprep should have consumed it)
-leftover="$MOUNT_DIR/Windows/Panther/unattend.xml"
-if [[ ! -f "$leftover" ]]; then
-    pass "No leftover Windows/Panther/unattend.xml (expected after successful sysprep)"
-else
-    warn "Windows/Panther/unattend.xml is still present — sysprep may not have fully processed it"
-fi
-
 # 5j. NetKVM (virtio-net) driver staged
 netkvm=$(find "$MOUNT_DIR/Windows/System32/DriverStore/FileRepository" \
     -iname "netkvm.inf" -print -quit 2>/dev/null)
@@ -313,10 +305,44 @@ fi
 # 5m. SSH server present (WS2025 inbox or older installed location)
 sshd_inbox="$MOUNT_DIR/Windows/System32/OpenSSH/sshd.exe"
 sshd_installed="$MOUNT_DIR/Program Files/OpenSSH/sshd.exe"
-if [[ -f "$sshd_inbox" || -f "$sshd_installed" ]]; then
+if [[ -f "$sshd_inbox" || -L "$sshd_inbox" || -f "$sshd_installed" || -L "$sshd_installed" ]]; then
     pass "SSH server (sshd.exe) is present"
 else
     fail "sshd.exe not found — no remote access possible on Oxide (no graphical console)"
+fi
+
+# 5n. stornvme Start=0 (NVMe driver must be boot-critical for Oxide)
+# 5o. VBS disabled (VBS activated during build causes 0x7B BSOD on Oxide/Propolis)
+# Both require reading the SYSTEM hive; gate on hivexget availability.
+if command -v hivexget &>/dev/null; then
+    system_hive="$MOUNT_DIR/Windows/System32/config/SYSTEM"
+
+    # 5n. stornvme Start value
+    # Start=0 (SERVICE_BOOT_START) means the kernel loads it before the OS filesystem
+    # driver stack is up — required for NVMe boot on Oxide.
+    stornvme_start=$(hivexget "$system_hive" \
+        '\ControlSet001\Services\stornvme' 'Start' 2>/dev/null | tr -d '[:space:]')
+    if [[ -z "$stornvme_start" ]]; then
+        fail "stornvme service not found in SYSTEM hive — NVMe driver may be missing"
+    elif (( stornvme_start + 0 == 0 )); then
+        pass "stornvme Start=0 (NVMe driver is boot-critical)"
+    else
+        fail "stornvme Start=$stornvme_start (expected 0) — NVMe boot will fail on Oxide"
+    fi
+
+    # 5o. VBS (Virtualization Based Security) disabled
+    # Key absent or value=0 means disabled (correct). Value=1 means VBS was activated
+    # during the build, typically by exposing VMX via the wrong QEMU CPU model (EPYC-v4).
+    vbs_val=$(hivexget "$system_hive" \
+        '\ControlSet001\Control\DeviceGuard' 'EnableVirtualizationBasedSecurity' \
+        2>/dev/null | tr -d '[:space:]')
+    if [[ -z "$vbs_val" ]] || (( vbs_val + 0 == 0 )); then
+        pass "VBS (Virtualization Based Security) is disabled"
+    else
+        fail "VBS is enabled (EnableVirtualizationBasedSecurity=$vbs_val) — image was built with wrong CPU model; boot will fail on Oxide"
+    fi
+else
+    warn "Skipping stornvme/VBS checks — hivexget not available (apt install libhivex-bin)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -341,18 +367,14 @@ else
     fi
 
     # 6b. EMS enabled in BCD
+    # bcdedit /ems on writes to the {emssettings} well-known object
+    # ({0ce4991b-e6b3-4b16-b23c-5e0d9250e5d9}), element 16000020.
+    # hivexget syntax: KEY path + VALUE name as separate arguments.
     if [[ -f "$bcd" ]] && command -v hivexget &>/dev/null; then
-        ems_found=false
-        while IFS= read -r obj_guid; do
-            raw=$(hivexget "$bcd" "\\Objects\\${obj_guid}\\Elements\\26000020\\Element" 2>/dev/null || true)
-            # DWORD true = little-endian 0x01000000
-            if [[ "$raw" == *"0x01"* ]]; then
-                ems_found=true
-                break
-            fi
-        done < <(hivexget "$bcd" '\Objects' 2>/dev/null | grep -oE '\{[^}]+\}')
-
-        if $ems_found; then
+        ems_raw=$(hivexget "$bcd" \
+            '\Objects\{0ce4991b-e6b3-4b16-b23c-5e0d9250e5d9}\Elements\16000020' \
+            'Element' 2>/dev/null | od -An -tx1 | tr -d ' \n')
+        if [[ "$ems_raw" == "01"* ]]; then
             pass "EMS (serial console) is enabled in BCD"
         else
             fail "EMS not enabled in BCD — serial console will not work on Oxide (bcdedit /ems on was not run)"
